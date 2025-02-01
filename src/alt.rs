@@ -351,8 +351,7 @@ fn list_updatable_cells(constraint: &Vec<usize>, existing: &[Cell]) -> Vec<(usiz
             updatable_cells.push((i, Cell::Painted));
         }
     }
-
-    unimplemented!()
+    updatable_cells
 }
 
 #[cfg(test)]
@@ -365,7 +364,7 @@ mod test_list_updatable_cells {
         let existing: CellVec = "?????".parse().unwrap();
         let existing: Vec<Cell> = existing.cells;
         let updatable_cells = list_updatable_cells(&constraint, &existing);
-        let expected = vec![(4, Cell::Crossed), (5, Cell::Crossed)];
+        let expected = vec![(2, Cell::Crossed)];
         assert_eq!(updatable_cells, expected);
     }
 }
