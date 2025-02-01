@@ -52,7 +52,7 @@ fn read_values(i: usize) -> Result<Vec<u8>, NonoError> {
         }
 
         let v = input
-            .trim()
+            // .trim()
             .split_whitespace()
             .map(|s| s.parse::<u8>())
             .collect::<Result<Vec<u8>, _>>()
