@@ -35,24 +35,20 @@ pub fn cells_to_string(cells: Vec<Cell>) -> String {
     cells.into_iter().map(|c| c.to_string()).collect()
 }
 
-impl std::str::FromStr for Cell {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+impl Cell {
+    pub fn from_char(s: &char) -> Option<Cell> {
         match s {
-            "O" => Ok(Cell::Painted),
-            "X" => Ok(Cell::Crossed),
-            "?" => Ok(Cell::Undetermined),
-            _ => Err(()),
+            'C' | 'x' | 'X' => Some(Cell::Crossed),
+            'P' | 'o' | 'O' | '0' => Some(Cell::Painted),
+            '?' => Some(Cell::Undetermined),
+            // 未定義の文字はすべて読み飛ばす
+            _ => None,
         }
     }
 }
 
-use std::str::FromStr;
-
-pub fn string_to_cells(s: &str) -> Result<Vec<Cell>, ()> {
-    // 1文字でも変換できない場合はエラーを返す。全文字変換できたらOkで返す
-    s.chars().map(|c| Cell::from_str(&c.to_string())).collect()
+pub fn string_to_cells(s: &str) -> Vec<Cell> {
+    s.chars().filter_map(|c| Cell::from_char(&c)).collect()
 }
 
 #[cfg(test)]
@@ -62,14 +58,9 @@ mod tests {
     #[test]
     fn test_string_to_cells_success() {
         assert_eq!(
-            string_to_cells("OX?").unwrap(),
+            string_to_cells("OX?"),
             vec![Cell::Painted, Cell::Crossed, Cell::Undetermined]
         );
-    }
-
-    #[test]
-    fn test_string_to_cells_fail() {
-        assert!(string_to_cells("OX?A").is_err());
     }
 
     #[test]
@@ -81,306 +72,410 @@ mod tests {
     }
 }
 
-use std::collections::HashSet;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CellVec {
+    cells: Vec<Cell>,
+}
 
-/// 制約をもとに、ありうるマス目を列挙する
-/// # Arguments
-/// * `constraint` - 制約
-/// * `n` - パズルサイズ
-/// # Returns
-/// * ありうるマス目のセット
-fn enumerate_cells(constraint: &[u8], n: u8) -> Result<HashSet<Vec<Cell>>, NonoError> {
-    /*
-    例えば、制約が[3,2]でパズルサイズが8の場合を考える。
-    // Oの塊(この場合OOOとOO)の左右または中間にXを挿入することで、ありうるマス目を列挙する。
-    |OOO|XOO| の|の位置に0個以上のXを挿入することが可能で、合計の個数n_xはパズルサイズ-(制約の合計+制約の個数-1)
-    ここで、制約の個数-1というのは、Oの塊の間には必ず1つ以上のXが入るため。
-    この場合、8-(5+2-1)=2個のXを3箇所の|の位置に挿入することが可能で、全部で3H2=4C2=6通りのマス目がありうる：
-    XXOOOXOO, XOOOXXOO, XOOOXOOX, OOOXXXOO, OOOXXOOX, OOOXOOXX
-    */
-
-    // まず、制約の合計を計算する
-    let sum: u8 = constraint.iter().sum();
-    // 制約の個数-1 を足す
-    let sum = sum + (constraint.len() as u8) - 1;
-    // これはパズルサイズを超えてはいけない
-    if sum > n {
-        return Err(NonoError::InputError);
+impl From<&str> for CellVec {
+    /// &str の各文字を `Cell::from_char` で変換し、変換できたもののみを集めます。
+    fn from(s: &str) -> Self {
+        let cells = s.chars().filter_map(|c| Cell::from_char(&c)).collect();
+        CellVec { cells }
     }
-
-    let n_x = n - sum;
-    let n_pos = constraint.len() + 1;
-    let mut pat: Vec<Vec<u8>> = helper(n_pos, n_x);
-    // patの中の各Vec<u8>の先頭と末尾以外に1を足すと、Oの塊の間に入るXの個数のリストになる。
-    for v in pat.iter_mut() {
-        for i in 1..v.len() - 1 {
-            v[i] += 1;
-        }
-    }
-
-    let mut ret = HashSet::new();
-    for p in pat {
-        let mut cells = vec![];
-        for i in 0..constraint.len() {
-            cells.extend(vec![Cell::Crossed; p[i] as usize]);
-            cells.extend(vec![Cell::Painted; constraint[i] as usize]);
-        }
-        cells.extend(vec![Cell::Crossed; p[n_pos - 1] as usize]);
-
-        ret.insert(cells);
-    }
-
-    Ok(ret)
 }
 
 #[cfg(test)]
-mod enumerate_cells_tests {
-    use super::*;
-    use std::iter::FromIterator;
-
-    #[test]
-    fn test_enumerate_cells_size10_4_5() {
-        assert_eq!(
-            enumerate_cells(&vec![4, 5], 10).unwrap(),
-            HashSet::from_iter(vec![string_to_cells("OOOOXOOOOO").unwrap()])
-        );
-    }
-    #[test]
-    fn test_enumerate_cells_size10_1_8() {
-        assert_eq!(
-            enumerate_cells(&vec![1, 8], 10).unwrap(),
-            HashSet::from_iter(vec![string_to_cells("OXOOOOOOOO").unwrap()])
-        );
-    }
-    #[test]
-    fn test_enumerate_cells_size8_3_2() {
-        assert_eq!(
-            enumerate_cells(&vec![3, 2], 8).unwrap(),
-            HashSet::from_iter(vec![
-                string_to_cells("XXOOOXOO").unwrap(),
-                string_to_cells("XOOOXXOO").unwrap(),
-                string_to_cells("XOOOXOOX").unwrap(),
-                string_to_cells("OOOXXXOO").unwrap(),
-                string_to_cells("OOOXXOOX").unwrap(),
-                string_to_cells("OOOXOOXX").unwrap(),
-            ])
-        );
-    }
-
-    #[test]
-    fn test_enumerate_cells_size10_2_2_3() {
-        assert_eq!(
-            enumerate_cells(&vec![2, 2, 3], 10).unwrap(),
-            HashSet::from_iter(vec![
-                string_to_cells("OOXOOXOOOX").unwrap(),
-                string_to_cells("OOXOOXXOOO").unwrap(),
-                string_to_cells("OOXXOOXOOO").unwrap(),
-                string_to_cells("XOOXOOXOOO").unwrap(),
-            ])
-        );
-    }
-
-    #[test]
-    fn test_enumerate_cells_size10_1_2_3() {
-        assert_eq!(
-            enumerate_cells(&vec![1, 2, 3], 10).unwrap(),
-            HashSet::from_iter(vec![
-                string_to_cells("OXOOXOOOXX").unwrap(),
-                string_to_cells("OXOOXXOOOX").unwrap(),
-                string_to_cells("OXXOOXOOOX").unwrap(),
-                string_to_cells("XOXOOXOOOX").unwrap(),
-                string_to_cells("OXOOXXXOOO").unwrap(),
-                string_to_cells("OXXOOXXOOO").unwrap(),
-                string_to_cells("XOXOOXXOOO").unwrap(),
-                string_to_cells("OXXXOOXOOO").unwrap(),
-                string_to_cells("XOXXOOXOOO").unwrap(),
-                string_to_cells("XXOXOOXOOO").unwrap(),
-            ])
-        );
-    }
-
-    #[test]
-    fn test_enumerate_cells_size15_8_1() {
-        assert_eq!(
-            enumerate_cells(&vec![8, 1], 15).unwrap(),
-            HashSet::from_iter(vec![
-                string_to_cells("OOOOOOOOXOXXXXX").unwrap(),
-                string_to_cells("OOOOOOOOXXOXXXX").unwrap(),
-                string_to_cells("XOOOOOOOOXOXXXX").unwrap(),
-                string_to_cells("OOOOOOOOXXXOXXX").unwrap(),
-                string_to_cells("XOOOOOOOOXXOXXX").unwrap(),
-                string_to_cells("XXOOOOOOOOXOXXX").unwrap(),
-                string_to_cells("OOOOOOOOXXXXOXX").unwrap(),
-                string_to_cells("XOOOOOOOOXXXOXX").unwrap(),
-                string_to_cells("XXOOOOOOOOXXOXX").unwrap(),
-                string_to_cells("XXXOOOOOOOOXOXX").unwrap(),
-                string_to_cells("OOOOOOOOXXXXXOX").unwrap(),
-                string_to_cells("XOOOOOOOOXXXXOX").unwrap(),
-                string_to_cells("XXOOOOOOOOXXXOX").unwrap(),
-                string_to_cells("XXXOOOOOOOOXXOX").unwrap(),
-                string_to_cells("XXXXOOOOOOOOXOX").unwrap(),
-                string_to_cells("OOOOOOOOXXXXXXO").unwrap(),
-                string_to_cells("XOOOOOOOOXXXXXO").unwrap(),
-                string_to_cells("XXOOOOOOOOXXXXO").unwrap(),
-                string_to_cells("XXXOOOOOOOOXXXO").unwrap(),
-                string_to_cells("XXXXOOOOOOOOXXO").unwrap(),
-                string_to_cells("XXXXXOOOOOOOOXO").unwrap(),
-            ])
-        );
-    }
-}
-
-/// 長さlで合計がsのリストを列挙する
-fn helper(l: usize, s: u8) -> Vec<Vec<u8>> {
-    if l == 1 {
-        return vec![vec![s]];
-    }
-
-    let mut ret = vec![];
-    for i in 0..=s {
-        for mut v in helper(l - 1, s - i) {
-            v.push(i);
-            ret.push(v);
-        }
-    }
-    ret.sort();
-    ret
-}
-
-#[cfg(test)]
-mod helper_tests {
+mod test_str_to_cellvec {
     use super::*;
 
     #[test]
-    fn test_helper_1() {
+    fn test_str_to_cellvec() {
+        let cell_vec: CellVec = "CPOX?".into();
+        let cv = cell_vec.cells;
         assert_eq!(
-            helper(2, 3),
-            vec![vec![0, 3], vec![1, 2], vec![2, 1], vec![3, 0]]
-        );
-    }
-
-    #[test]
-    fn test_helper_2() {
-        assert_eq!(
-            helper(3, 3),
+            cv,
             vec![
-                vec![0, 0, 3],
-                vec![0, 1, 2],
-                vec![0, 2, 1],
-                vec![0, 3, 0],
-                vec![1, 0, 2],
-                vec![1, 1, 1],
-                vec![1, 2, 0],
-                vec![2, 0, 1],
-                vec![2, 1, 0],
-                vec![3, 0, 0]
+                Cell::Crossed,
+                Cell::Painted,
+                Cell::Painted,
+                Cell::Crossed,
+                Cell::Undetermined
+            ]
+        );
+    }
+
+    #[test]
+    fn test_str_to_cellvec_separator() {
+        let cell_vec: CellVec = "C_P_O_X_?".into();
+        let cv = cell_vec.cells;
+        assert_eq!(
+            cv,
+            vec![
+                Cell::Crossed,
+                Cell::Painted,
+                Cell::Painted,
+                Cell::Crossed,
+                Cell::Undetermined
             ]
         );
     }
 }
 
-/// `candidate` と `existing` のセルが矛盾しないかをチェックする関数
+fn backtrack_painted_positions(
+    constraint: &mut Vec<usize>,  // それぞれのPaintedの塊の長さ
+    existing: &[Cell],            // 既存盤面のスライス
+    positions: &mut Vec<usize>,   // それぞれのPaintedの塊の頭の位置を記録する
+    record: &mut Vec<Vec<usize>>, //
+    depth: u32,                   // 再帰の深さ。デバッグ時に見やすいように追加した。
+) {
+    // 再帰を使って、与えられた範囲existingのどの区間内にPaintedの塊を配置することができるかを調べていく。
+    // existingの左から右へと順番にPaintedの塊を配置していく。
+    // ある範囲に配置できるなら、残りの範囲に対して再帰的に同じことを行う。
+
+    if let Some(painted_len) = constraint.pop() {
+        for begin in 0..existing.len() {
+            let end = begin + painted_len; // semi-open interval
+
+            // 既存の盤面の範囲を超えてPaintedの塊を配置することはできない。
+            if end > existing.len() {
+                // constraint.push(painted_len);
+                continue;
+            }
+
+            /*
+            置くPaintedの塊よりも右には既にPaintedがあってはならない。
+
+            例: パズルサイズは10とする。
+            0 1 2 3 4 5 6 7 8 9
+            _ _ _ _ _ _ _ _ _ _
+            いま仮にbegin=3, len=3とする(end=6)と、 [3..6]にPainted(Oで表す)を置くには
+            existing[6..]がすべてUndetermined(?)またはCrossed(X)である必要がある。
+
+            0 1 2 3 4 5 6 7 8 9
+            _ _ _ O O O ? ? ? ? <- これは可能
+            _ _ _ O O O ? X X ? <- これも可能
+            _ _ _ O O O ? O O ? <- これは不可能
+
+            */
+            if existing[end..].iter().any(|c| *c == Cell::Painted) {
+                continue;
+            }
+
+            // exising[begin..end] にCrossedがあるなら、[begin..end]にPaintedを置くことはできない。
+            if existing[begin..end].iter().any(|c| *c == Cell::Crossed) {
+                continue;
+            }
+
+            // Paintedの塊を置いたら、その左はCrossedで確定するので、Paintedであってはならない。
+            if begin != 0 && existing[begin - 1] == Cell::Painted {
+                continue;
+            }
+
+            // いずれも問題なければ、[begin..end]にPaintedの塊を配置できる。
+            positions.push(begin);
+
+            if begin == 0 {
+                backtrack_painted_positions(
+                    constraint,
+                    &existing[..begin],
+                    positions,
+                    record,
+                    depth + 1,
+                );
+            } else {
+                backtrack_painted_positions(
+                    constraint,
+                    &existing[..begin - 1],
+                    positions,
+                    record,
+                    depth + 1,
+                );
+            }
+
+            positions.pop();
+        }
+
+        constraint.push(painted_len);
+    } else {
+        // constraintが空ということは、すべてのPaintedの塊が配置されたということ。
+        // そのため、残った範囲内にPaintedがあってはならない。
+        if existing.iter().any(|c| *c == Cell::Painted) {
+            return;
+        }
+        // もし見つからなければ、全てのPaintedの塊が問題なく配置されたということなので、recordに記録する。
+        // ただし、先に置いた塊がpositionsの前に来ているので、positionsを逆順にしたうえでrecordにpushする。
+        record.push(positions.iter().copied().rev().collect());
+    }
+}
+
+/// 与えられた制約と既存の盤面から、Paintedを置くことができる位置を探す。
 /// # Arguments
-/// * `candidate` - 候補となるセルのベクトル
-/// * `existing` - 既存のセルのベクトル
-/// # Returns
-/// 矛盾しない場合は `true`、矛盾する場合は `false` を返す
-fn is_consistent(candidate: &[Cell], existing: &[Cell]) -> bool {
-    for (c, e) in candidate.iter().zip(existing.iter()) {
-        match (c, e) {
-            (Cell::Painted, Cell::Crossed) => return false,
-            (Cell::Crossed, Cell::Painted) => return false,
-            _ => (),
-        }
-    }
-    true
+/// - constraint: それぞれのPaintedの塊の長さ
+/// - existing: 既存の盤面
+/// # Returns:
+/// - それぞれのPaintedの塊の頭の位置を記録したVec
+pub fn find_paintable_positions(constraint: &Vec<usize>, existing: &[Cell]) -> Vec<Vec<usize>> {
+    let mut positions = Vec::new();
+    let mut record = Vec::new();
+    let constraint = constraint.clone();
+    backtrack_painted_positions(
+        &mut constraint.clone(),
+        existing,
+        &mut positions,
+        &mut record,
+        0,
+    );
+    record
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Delta {
-    idx: usize,
-    kind: Cell,
-}
-
-pub fn list_updatable_cells(pattern: &HashSet<Vec<Cell>>, existing: &[Cell]) -> Vec<Delta> {
-    if pattern.is_empty() {
-        return Vec::new();
-    }
-
-    let mut pattern = pattern.clone();
-    pattern.retain(|p| is_consistent(p, existing));
-
-    // 残ったパターン全てに共通するセルを列挙する
-    let first = pattern.iter().next().unwrap();
-    let len = first.len();
-    let mut ret = vec![];
-
-    for i in 0..len {
-        let c = first[i].clone();
-        if pattern.iter().all(|p| p[i] == c) {
-            ret.push(Delta { idx: i, kind: c });
-        }
-    }
-
-    ret
-}
-
-mod list_updatable_cells_test {
+#[cfg(test)]
+mod test_find_paintable_positions {
     use super::*;
+
+    fn run_test(constraint: Vec<usize>, existing: &str, expected: Vec<Vec<usize>>) {
+        let existing: CellVec = existing.into();
+        let mut actual = find_paintable_positions(&constraint, &existing.cells);
+        actual.sort();
+        let mut expected = expected;
+        expected.sort();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_solve_0() {
+        run_test(vec![2], "???", vec![vec![0], vec![1]]);
+    }
+
+    #[test]
+    fn test_solve_1() {
+        run_test(vec![1, 1], "???", vec![vec![0, 2]]);
+    }
+
+    #[test]
+    fn test_solve_2() {
+        run_test(vec![1, 2], "????", vec![vec![0, 2]]);
+    }
+
+    #[test]
+    fn test_solve_3() {
+        run_test(vec![2, 2], "?????", vec![vec![0, 3]]);
+    }
+
+    #[test]
+    fn test_solve_4() {
+        run_test(
+            vec![2, 3],
+            "???????",
+            vec![vec![0, 3], vec![0, 4], vec![1, 4]],
+        );
+    }
+
+    #[test]
+    fn test_solve_5() {
+        run_test(vec![2, 3], "???x???", vec![vec![0, 4], vec![1, 4]]);
+    }
+
+    #[test]
+    fn test_solve_6() {
+        run_test(
+            vec![3, 4],
+            "?????_?????",
+            vec![
+                vec![0, 4],
+                vec![0, 5],
+                vec![0, 6],
+                vec![1, 5],
+                vec![1, 6],
+                vec![2, 6],
+            ],
+        );
+    }
+
+    #[test]
+    fn test_solve_7() {
+        run_test(
+            vec![2, 2],
+            "?????O????",
+            vec![
+                vec![0, 4],
+                vec![0, 5],
+                vec![1, 4],
+                vec![1, 5],
+                vec![2, 5],
+                vec![4, 7],
+                vec![4, 8],
+                vec![5, 8],
+            ],
+        );
+    }
+
+    #[test]
+    fn test_solve_8() {
+        run_test(
+            vec![3, 3],
+            "?????_x????",
+            vec![
+                vec![0, 6],
+                vec![0, 7],
+                vec![1, 6],
+                vec![1, 7],
+                vec![2, 6],
+                vec![2, 7],
+            ],
+        );
+    }
+}
+
+fn list_updatable_cells(constraint: &Vec<usize>, existing: &[Cell]) -> Vec<(usize, Cell)> {
+    let head_positions = find_paintable_positions(constraint, existing);
+
+    // true: そのセルはCrossedで確定する, false: そのセルはUndeterminedのままである。
+    let mut is_fixed_crossed: Vec<bool> = vec![true; existing.len()];
+    // true: そのセルはPaintedで確定する, false: そのセルはUndeterminedのままである。
+    let mut is_fixed_painted: Vec<bool> = vec![true; existing.len()];
+
+    for positions in &head_positions {
+        let mut pattern = vec![Cell::Crossed; existing.len()];
+        for (i, p) in positions.iter().enumerate() {
+            for j in 0..constraint[i] {
+                pattern[p + j] = Cell::Painted;
+            }
+        }
+        // Crossedで確定するには、すべての塗り方でCrossedである必要がある。
+        // Paintedで確定するには、すべての塗り方でPaintedである必要がある。
+        for (i, c) in pattern.iter().enumerate() {
+            if *c == Cell::Crossed {
+                is_fixed_painted[i] = false;
+            } else if *c == Cell::Painted {
+                is_fixed_crossed[i] = false;
+            }
+        }
+    }
+
+    let mut updatable_cells = Vec::new();
+    for i in 0..existing.len() {
+        if is_fixed_crossed[i] {
+            updatable_cells.push((i, Cell::Crossed));
+        } else if is_fixed_painted[i] {
+            updatable_cells.push((i, Cell::Painted));
+        }
+    }
+
+    // すでに確定していたセルは除外する
+    updatable_cells.retain(|(i, _)| existing[*i] == Cell::Undetermined);
+    updatable_cells
+}
+
+#[cfg(test)]
+mod test_list_updatable_cells {
+    use super::*;
+
+    fn run_test(constraint: Vec<usize>, existing: &str, expected: Vec<(usize, char)>) {
+        let existing: CellVec = existing.into();
+        let existing: Vec<Cell> = existing.cells;
+        let updatable_cells = list_updatable_cells(&constraint, &existing);
+        let expected: Vec<(usize, Cell)> = expected
+            .into_iter()
+            .map(|(i, c)| (i, Cell::from_char(&c).unwrap()))
+            .collect();
+        assert_eq!(updatable_cells, expected);
+    }
+
+    #[test]
+    fn test_list_updatable_cells_0() {
+        run_test(vec![3], "?????", vec![(2, 'O')]);
+    }
 
     #[test]
     fn test_list_updatable_cells_1() {
-        let pattern = enumerate_cells(&vec![3, 2], 8).unwrap();
-        let existing = string_to_cells("????????").unwrap();
-        let actual = list_updatable_cells(&pattern, &existing);
-        let expected = vec![Delta {
-            idx: 2,
-            kind: Cell::Painted,
-        }];
-        assert_eq!(actual, expected);
+        run_test(vec![8], "?????_?????_?????", vec![(7, 'O')]);
     }
 
     #[test]
     fn test_list_updatable_cells_2() {
-        let pattern = enumerate_cells(&vec![3, 4], 10).unwrap();
-        let existing = string_to_cells("??????????").unwrap();
-        let actual = list_updatable_cells(&pattern, &existing);
-        let expected = vec![
-            Delta {
-                idx: 2,
-                kind: Cell::Painted,
-            },
-            Delta {
-                idx: 6,
-                kind: Cell::Painted,
-            },
-            Delta {
-                idx: 7,
-                kind: Cell::Painted,
-            },
-        ];
-        assert_eq!(actual, expected);
+        run_test(
+            vec![2, 2],
+            "?????",
+            vec![(0, 'O'), (1, 'O'), (2, 'X'), (3, 'O'), (4, 'O')],
+        );
     }
 
     #[test]
     fn test_list_updatable_cells_3() {
-        let pattern = enumerate_cells(&vec![3, 4], 10).unwrap();
-        let existing = string_to_cells("??????????").unwrap();
-        let actual = list_updatable_cells(&pattern, &existing);
-        let expected = vec![
-            Delta {
-                idx: 2,
-                kind: Cell::Painted,
-            },
-            Delta {
-                idx: 6,
-                kind: Cell::Painted,
-            },
-            Delta {
-                idx: 7,
-                kind: Cell::Painted,
-            },
-        ];
-        assert_eq!(actual, expected);
+        run_test(vec![2, 2], "?????_O????", vec![]);
+    }
+
+    #[test]
+    fn test_list_updatable_cells_4() {
+        run_test(
+            vec![2, 2, 7],
+            "?????_?????_?????",
+            vec![(8, 'O'), (9, 'O'), (10, 'O'), (11, 'O'), (12, 'O')],
+        );
+    }
+
+    #[test]
+    fn test_list_updatable_cells_5() {
+        run_test(
+            vec![5, 2, 5],
+            "?????_?????_?????",
+            vec![
+                (1, 'O'),
+                (2, 'O'),
+                (3, 'O'),
+                (4, 'O'),
+                (7, 'O'),
+                (10, 'O'),
+                (11, 'O'),
+                (12, 'O'),
+                (13, 'O'),
+            ],
+        );
+    }
+
+    #[test]
+    fn test_list_updatable_cells_6() {
+        run_test(
+            vec![1, 8, 2],
+            "?????_?????_?????",
+            vec![(4, 'O'), (5, 'O'), (6, 'O'), (7, 'O'), (8, 'O'), (9, 'O')],
+        );
+    }
+
+    #[test]
+    fn test_list_updatable_cells_7() {
+        run_test(
+            vec![4, 3, 1, 1],
+            "?????_?????_xxox?",
+            vec![(2, 'O'), (3, 'O'), (7, 'O')],
+        );
+    }
+
+    #[test]
+    fn test_list_updatable_cells_8() {
+        run_test(
+            vec![5, 2, 1, 1],
+            "?????_??o??_????o",
+            vec![(3, 'O'), (4, 'O'), (13, 'X')],
+        );
+    }
+
+    #[test]
+    fn test_list_updatable_cells_9() {
+        run_test(
+            vec![3, 3],
+            "?????_x????",
+            vec![(2, 'O'), (7, 'O'), (8, 'O')],
+        );
+    }
+
+    #[test]
+    fn test_list_updatable_cells_10() {
+        run_test(
+            vec![4, 1, 1],
+            "?????_x?x??",
+            vec![(1, 'O'), (2, 'O'), (3, 'O'), (6, 'O')],
+        );
     }
 }
