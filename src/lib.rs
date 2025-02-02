@@ -1,5 +1,4 @@
-mod alt;
-pub mod make_table;
+use std::ops::Deref;
 
 pub const N: u8 = 15;
 
@@ -36,7 +35,7 @@ pub fn cells_to_string(cells: Vec<Cell>) -> String {
 }
 
 impl Cell {
-    pub fn from_char(s: &char) -> Option<Cell> {
+    pub fn from_char(s: char) -> Option<Cell> {
         match s {
             'C' | 'x' | 'X' => Some(Cell::Crossed),
             'P' | 'o' | 'O' | '0' => Some(Cell::Painted),
@@ -48,7 +47,7 @@ impl Cell {
 }
 
 pub fn string_to_cells(s: &str) -> Vec<Cell> {
-    s.chars().filter_map(|c| Cell::from_char(&c)).collect()
+    s.chars().filter_map(Cell::from_char).collect()
 }
 
 #[cfg(test)]
@@ -78,10 +77,18 @@ pub struct CellVec {
 }
 
 impl From<&str> for CellVec {
-    /// &str の各文字を `Cell::from_char` で変換し、変換できたもののみを集めます。
+    /// &str の各文字を `Cell::from_char` で変換し、変換できたもののみを集める。
     fn from(s: &str) -> Self {
-        let cells = s.chars().filter_map(|c| Cell::from_char(&c)).collect();
+        let cells = s.chars().filter_map(Cell::from_char).collect();
         CellVec { cells }
+    }
+}
+
+impl Deref for CellVec {
+    type Target = Vec<Cell>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.cells
     }
 }
 
@@ -175,23 +182,18 @@ fn backtrack_painted_positions(
             // いずれも問題なければ、[begin..end]にPaintedの塊を配置できる。
             positions.push(begin);
 
-            if begin == 0 {
-                backtrack_painted_positions(
-                    constraint,
-                    &existing[..begin],
-                    positions,
-                    record,
-                    depth + 1,
-                );
+            let remaining_left_slice = if begin == 0 {
+                &existing[..0]
             } else {
-                backtrack_painted_positions(
-                    constraint,
-                    &existing[..begin - 1],
-                    positions,
-                    record,
-                    depth + 1,
-                );
-            }
+                &existing[..(begin - 1)]
+            };
+            backtrack_painted_positions(
+                constraint,
+                remaining_left_slice,
+                positions,
+                record,
+                depth + 1,
+            );
 
             positions.pop();
         }
@@ -215,12 +217,12 @@ fn backtrack_painted_positions(
 /// - existing: 既存の盤面
 /// # Returns:
 /// - それぞれのPaintedの塊の頭の位置を記録したVec
-pub fn find_paintable_positions(constraint: &Vec<usize>, existing: &[Cell]) -> Vec<Vec<usize>> {
+pub fn find_paintable_positions(constraint: &[usize], existing: &[Cell]) -> Vec<Vec<usize>> {
     let mut positions = Vec::new();
     let mut record = Vec::new();
-    let constraint = constraint.clone();
+    let mut cloned_constraint = constraint.to_vec();
     backtrack_painted_positions(
-        &mut constraint.clone(),
+        &mut cloned_constraint,
         existing,
         &mut positions,
         &mut record,
@@ -327,7 +329,7 @@ mod test_find_paintable_positions {
     }
 }
 
-fn list_updatable_cells(constraint: &Vec<usize>, existing: &[Cell]) -> Vec<(usize, Cell)> {
+pub fn list_updatable_cells(constraint: &[usize], existing: &[Cell]) -> Vec<(usize, Cell)> {
     let head_positions = find_paintable_positions(constraint, existing);
 
     // true: そのセルはCrossedで確定する, false: そのセルはUndeterminedのままである。
@@ -377,7 +379,7 @@ mod test_list_updatable_cells {
         let updatable_cells = list_updatable_cells(&constraint, &existing);
         let expected: Vec<(usize, Cell)> = expected
             .into_iter()
-            .map(|(i, c)| (i, Cell::from_char(&c).unwrap()))
+            .map(|(i, c)| (i, Cell::from_char(c).unwrap()))
             .collect();
         assert_eq!(updatable_cells, expected);
     }
