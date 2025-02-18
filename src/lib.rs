@@ -1,10 +1,13 @@
-use std::ops::Deref;
+use std::{ops::Deref, vec};
 
 pub const N: u8 = 15;
 
+pub type Constraint = Vec<usize>;
+
 pub struct Puzzle {
-    pub rows: Vec<Vec<u8>>,
-    pub cols: Vec<Vec<u8>>,
+    pub row_constraints: Vec<Constraint>,
+    pub col_constraints: Vec<Constraint>,
+    pub table: Vec<Vec<Cell>>,
 }
 
 #[derive(Debug)]
@@ -55,7 +58,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_string_to_cells_success() {
+    fn test_string_to_cells() {
         assert_eq!(
             string_to_cells("OX?"),
             vec![Cell::Painted, Cell::Crossed, Cell::Undetermined]
@@ -235,7 +238,7 @@ pub fn find_paintable_positions(constraint: &[usize], existing: &[Cell]) -> Vec<
 mod test_find_paintable_positions {
     use super::*;
 
-    fn run_test(constraint: Vec<usize>, existing: &str, expected: Vec<Vec<usize>>) {
+    fn run_test(constraint: Constraint, existing: &str, expected: Vec<Vec<usize>>) {
         let existing: CellVec = existing.into();
         let mut actual = find_paintable_positions(&constraint, &existing.cells);
         actual.sort();
@@ -479,5 +482,64 @@ mod test_list_updatable_cells {
             "?????_x?x??",
             vec![(1, 'O'), (2, 'O'), (3, 'O'), (6, 'O')],
         );
+    }
+}
+
+struct Delta {
+    row: usize,
+    col: usize,
+    cell: Cell,
+}
+
+impl Default for Puzzle {
+    fn default() -> Self {
+        Self::new(vec![], vec![], vec![])
+    }
+}
+
+impl Puzzle {
+    pub fn new(
+        row_constraints: Vec<Constraint>,
+        col_constraints: Vec<Constraint>,
+        table: Vec<Vec<Cell>>,
+    ) -> Self {
+        Puzzle {
+            row_constraints,
+            col_constraints,
+            table,
+        }
+    }
+
+    pub fn is_solved(&self) -> bool {
+        self.table
+            .iter()
+            .all(|row| row.iter().all(|c| *c != Cell::Undetermined))
+    }
+
+    pub fn solve(&mut self) {
+        // 行方向に対して、Paintedを置くことができる位置を探す。
+        let mut updatable_cells: Vec<Delta> = Vec::new();
+        for (i, row_cnstr) in self.row_constraints.iter().enumerate() {
+            for (j, cell) in list_updatable_cells(row_cnstr, &self.table[i]).iter() {
+                updatable_cells.push(Delta {
+                    row: i,
+                    col: *j,
+                    cell: cell.clone(),
+                });
+            }
+        }
+        // 列方向に対して、Paintedを置くことができる位置を探す。
+        for (j, col_cnstr) in self.col_constraints.iter().enumerate() {
+            updatable_cells.extend(list_updatable_cells(
+                col_cnstr,
+                &self
+                    .table
+                    .iter()
+                    .map(|row| row[j].clone())
+                    .collect::<Vec<Cell>>(),
+            ));
+        }
+
+        updatable_cells.sort();
     }
 }
